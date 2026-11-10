@@ -334,6 +334,7 @@ internal sealed class AccountService
                 var now = CanonicalAuthExists() ? ReadCanonicalAuth() : null;
                 if (before != now) throw new InvalidOperationException("다른 프로그램이 로그인 정보를 갱신해 전환을 중단했습니다. 다시 시도해 주세요.");
                 cancellation.ThrowIfCancellationRequested();
+                if (OperatingSystem.IsWindows()) SharedLocalProjects.Apply(CodexHome, before, selectedAuth, Running);
                 SecureFiles.AtomicWriteText(AuthPath, selectedAuth); selected.RequiresApply = false;
                 SynchronizeCurrentCore(policy); Vault.Save();
             }

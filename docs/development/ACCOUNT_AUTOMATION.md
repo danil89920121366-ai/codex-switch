@@ -16,6 +16,12 @@ Both UIs label the subscription date **Expires** and calendar-day count **Days l
 
 The shared presenter preserves official numbered Pro names rather than collapsing them into one family. [Official pricing](https://learn.chatgpt.com/docs/pricing) and [official plan names](https://learn.chatgpt.com/docs/dots#access), checked 2026-10-24, distinguish **Pro 100**, **Pro 200** and **Pro 500**. The official desktop26.1016.8622.0 `plan-names` module's `planUpgradeModal.subscription.numberedTiers` message maps `prolite` to **Pro 100**, `pro` to **Pro 200**, and `promax` to **Pro 500**. Existing explicit numeric/underscore aliases retain the matching tier. Legacy `team` displays as **Business**. This only formats the label: original account entitlements remain unchanged, and the number is the official tier name rather than a claim about the account's actual charge or billing currency. Unknown future identifiers remain visible.
 
+## Keep local projects on Windows
+
+On a trusted Windows computer, create `share-local-projects.json` in the Codex home (normally `%USERPROFILE%\.codex`) with `{"enabled":true}` to opt in. During a Codex Switch handoff, the destination profile receives missing local project folders, order and local chat assignments. Its existing entries take precedence. Cloud project associations stay account-specific.
+
+When the current sidebar catalog is empty, Switch can recover entries from its local backups for that owner when their mapped projects still exist in the current Codex database. Switch reads the database without editing it and saves a rollback copy in `project-sharing-backups` before changing desktop state. Remove the opt-in file to stop sharing during future switches.
+
 ## Verification
 
 The toolbar names account switching in every bundled language. Its own column allows long labels to wrap without covering centered session counters. Windows offscreen layout checks cover nine languages, both states, the500×360 minimum and two-digit session counts; these do not show or interact with a native window.
