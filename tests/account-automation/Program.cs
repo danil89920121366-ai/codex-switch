@@ -7,6 +7,8 @@ void Check(string name, bool condition) { if (!condition) throw new Exception(na
 var now = DateTimeOffset.UtcNow;
 SharedProjectsContracts.Run(Check);
 if (args.Contains("--shared-projects-only")) { Console.WriteLine(JsonSerializer.Serialize(new { passed = checks.Count, checks })); return; }
+QuotaContinuationContracts.Run(Check);
+if (args.Contains("--continuation-only")) { Console.WriteLine(JsonSerializer.Serialize(new { passed = checks.Count, checks })); return; }
 await StreamRecoveryContracts.Run(Check);
 CreditHistoryContracts.Run(Check);
 HistoryRangeContracts.Run(Check);

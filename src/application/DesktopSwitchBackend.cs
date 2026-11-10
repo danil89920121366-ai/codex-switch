@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
@@ -36,8 +38,11 @@ internal sealed class DesktopSwitchBackend : IAccountSwitchBackend
             if (!RuntimeLocator.IsDesktopRunning(_service.Installation.DesktopPath)) return Array.Empty<SwitchChat>();
         }
         await _sessions.WaitForDiscoveryAsync(cancellation);
-        var chats = _sessions.Threads.Where(thread => thread.Status == "active" || _includeUnfinished && thread.Status == "idle" && thread.Goal == "active").Select(thread => new SwitchChat {
-            Id = thread.Id, OriginalTitle = thread.Title ?? "", OriginalTurnId = thread.LastTurnId, OriginalGoal = thread.Goal }).ToArray();
+        var threads = _sessions.Threads;
+        var chats = threads.Where(thread => thread.Status == "active" || _includeUnfinished && thread.Status == "idle" && thread.Goal == "active").Select(thread => new SwitchChat {
+            Id = thread.Id, OriginalTitle = thread.Title ?? "", OriginalTurnId = thread.LastTurnId, OriginalGoal = thread.Goal }).ToList();
+        if (OperatingSystem.IsWindows() && _targetAccountKey != null && _service.CurrentKey is { } source && source != _targetAccountKey)
+            CaptureQuotaFailures(threads, chats, cancellation);
         foreach (var chat in chats.Where(chat => OperatingSystem.IsLinux() || string.IsNullOrWhiteSpace(chat.OriginalTitle)))
         {
             var result = await RequestMetadataAsync("thread/read", new { threadId = chat.Id, includeTurns = false }, cancellation);
@@ -45,8 +50,34 @@ internal sealed class DesktopSwitchBackend : IAccountSwitchBackend
             if (_targetAccountKey != null) await _service.CheckThreadContextAsync(result.GetProperty("thread"), _targetAccountKey, cancellation);
             chat.OriginalTitle = JsonValue.String(result.GetProperty("thread"), "name") ?? "";
         }
-        return chats;
+        return chats.ToArray();
     }
+
+    private void CaptureQuotaFailures(DesktopThreadState[] threads, List<SwitchChat> chats, CancellationToken cancellation)
+    {
+        var captured = chats.Select(chat => chat.Id).ToHashSet(StringComparer.Ordinal);
+        var candidates = threads.Where(thread => SwitchContinuation.CanResumeQuotaFailure(thread) && !captured.Contains(thread.Id)).ToArray();
+        if (candidates.Length == 0) return;
+        try
+        {
+            using var history = QuotaTurnHistory.Open(_service.CodexHome);
+            if (history == null) return;
+            var now = DateTimeOffset.UtcNow;
+            foreach (var thread in candidates)
+            {
+                cancellation.ThrowIfCancellationRequested();
+                var turn = history.RecentFailure(thread.Id, now);
+                if (turn == null || (thread.LastTurnId != null && thread.LastTurnId != turn)) continue;
+                chats.Add(new SwitchChat { Id = thread.Id, OriginalTitle = thread.Title ?? "", OriginalTurnId = turn,
+                    OriginalGoal = thread.Goal, RestartAfterQuotaFailure = true });
+            }
+        }
+        catch (Exception error) when (error is IOException or JsonException)
+        {
+            Trace.TraceWarning("Codex Switch could not read recent quota failures from local turn history.");
+        }
+    }
+
     private async Task<CodexRpc> MetadataAsync(CancellationToken cancellation)
     {
         if (!OperatingSystem.IsWindows() && !OperatingSystem.IsMacOS())
@@ -156,6 +187,18 @@ internal sealed class DesktopSwitchBackend : IAccountSwitchBackend
             thread = await _sessions.WaitForThreadAsync(chat.Id, cancellation);
             if (SwitchContinuation.Decide(chat, thread) is ChatResumeState changed) return changed;
         }
+        if (chat.RestartAfterQuotaFailure)
+        {
+            if (!SwitchContinuation.CanResumeQuotaFailure(thread)) return ChatResumeState.Unconfirmed;
+            if (await CurrentAccountAsync(cancellation) != expectedAccount)
+                throw new InvalidOperationException("로그인 계정이 변경돼 채팅 재개를 중단했습니다.");
+            using var history = QuotaTurnHistory.Open(_service.CodexHome);
+            if (chat.OriginalTurnId == null || history?.IsLatestFailure(chat.Id, chat.OriginalTurnId) != true)
+                return ChatResumeState.Unconfirmed;
+            thread = await _sessions.WaitForThreadAsync(chat.Id, cancellation);
+            if (SwitchContinuation.Decide(chat, thread) is ChatResumeState changed) return changed;
+            if (!SwitchContinuation.CanResumeQuotaFailure(thread)) return ChatResumeState.Unconfirmed;
+        }
         sending();
         var result = await _sessions.SendToOwnerAsync(thread, "thread-follower-start-turn", SwitchContinuation.StartParameters(chat), 2, cancellation);
         var turn = result.GetProperty("result").GetProperty("turn");
@@ -173,6 +216,9 @@ internal sealed class DesktopSwitchBackend : IAccountSwitchBackend
 
 internal static class SwitchContinuation
 {
+    internal static bool CanResumeQuotaFailure(DesktopThreadState thread) =>
+        thread.Status == "idle" && !thread.Waiting && thread.Goal is null or "active" or "usageLimited";
+
     public static object StartParameters(SwitchChat chat) => new { conversationId = chat.Id,
         turnStart = new { request = new { threadId = chat.Id, input = new[] { new { type = "text", text = "Continue", text_elements = Array.Empty<object>() } },
             clientUserMessageId = chat.ContinueMessageId }, context = new { inheritThreadSettings = true } } };
@@ -184,7 +230,8 @@ internal static class SwitchContinuation
             return thread.LastMessageId == chat.ContinueMessageId && thread.LastTurnId != chat.OriginalTurnId && thread.LastTurnStatus == "completed" ?
                 ChatResumeState.Completed : ChatResumeState.Unconfirmed;
         if (thread.LastTurnId != null && chat.OriginalTurnId != null && thread.LastTurnId != chat.OriginalTurnId) return ChatResumeState.Completed;
-        if (thread.LastTurnId == chat.OriginalTurnId && thread.LastTurnId != null && thread.LastTurnStatus == "completed" && thread.Goal != "active") return ChatResumeState.Completed;
+        if (!chat.RestartAfterQuotaFailure && thread.LastTurnId == chat.OriginalTurnId && thread.LastTurnId != null &&
+            thread.LastTurnStatus == "completed" && thread.Goal != "active") return ChatResumeState.Completed;
         return null;
     }
 }

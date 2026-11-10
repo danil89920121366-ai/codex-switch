@@ -19,6 +19,7 @@ internal sealed class SwitchChat
     public string BackupTitle { get; set; } = "";
     public string? OriginalTurnId { get; set; }
     public string? OriginalGoal { get; set; }
+    public bool RestartAfterQuotaFailure { get; set; }
     public bool NameSaved { get; set; }
     public string ContinueMessageId { get; set; } = Guid.NewGuid().ToString();
     public ChatResumeState ResumeState { get; set; }

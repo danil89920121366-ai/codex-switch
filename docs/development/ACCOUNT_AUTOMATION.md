@@ -16,6 +16,8 @@ Both UIs label the subscription date **Expires** and calendar-day count **Days l
 
 The shared presenter preserves official numbered Pro names rather than collapsing them into one family. [Official pricing](https://learn.chatgpt.com/docs/pricing) and [official plan names](https://learn.chatgpt.com/docs/dots#access), checked 2026-10-24, distinguish **Pro 100**, **Pro 200** and **Pro 500**. The official desktop26.1016.8622.0 `plan-names` module's `planUpgradeModal.subscription.numberedTiers` message maps `prolite` to **Pro 100**, `pro` to **Pro 200**, and `promax` to **Pro 500**. Existing explicit numeric/underscore aliases retain the matching tier. Legacy `team` displays as **Business**. This only formats the label: original account entitlements remain unchanged, and the number is the official tier name rather than a claim about the account's actual charge or billing currency. Unknown future identifiers remain visible.
 
+On Windows, switching to another account also considers open idle chats whose latest recorded turn failed with a usage-limit error in the preceding two minutes. Before sending Continue, Switch checks that the same quota failure is still the latest turn and that the chat is eligible. Chats waiting for input and manually paused or blocked goals are excluded from this recovery path.
+
 ## Keep local projects on Windows
 
 On a trusted Windows computer, create `share-local-projects.json` in the Codex home (normally `%USERPROFILE%\.codex`) with `{"enabled":true}` to opt in. During a Codex Switch handoff, the destination profile receives missing local project folders, order and local chat assignments. Its existing entries take precedence. Cloud project associations stay account-specific.
